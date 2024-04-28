@@ -1,4 +1,5 @@
 using Dalamud.Hooking;
+using OpenTK.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,6 +42,7 @@ namespace NRender.Vfx
 
         public delegate nint SetOmenMatrixDelegate(nint handle, nint pos);
         public static SetOmenMatrixDelegate SetOmenMatrix;
+        public static Hook<SetOmenMatrixDelegate> SetOmenMatrixHook;
 
 
         public static void Init()
@@ -80,7 +82,15 @@ namespace NRender.Vfx
 
             var setOmenMatrixFunctionAddress = Service.SigSCanner.ScanText(SigConst.SetOmenMatrixSig);
             SetOmenMatrix = Marshal.GetDelegateForFunctionPointer<SetOmenMatrixDelegate> (setOmenMatrixFunctionAddress);
+            SetOmenMatrixHook = Service.Hook.HookFromAddress<SetOmenMatrixDelegate>(setOmenMatrixFunctionAddress, SetOmenMatrixHandle);
+        }
 
+        private static nint SetOmenMatrixHandle(nint handle, nint pos)
+        {
+
+            var a = Marshal.PtrToStructure<Matrix4>(pos);
+            Service.pluginLog.Info(a.ToString());
+            return SetOmenMatrixHook.Original.Invoke(handle, pos);
         }
 
         private static nint RemoveOmenHandle(nint handle, int uk1)
