@@ -17,6 +17,7 @@ public static class NRenderMain
     {
         pluginInterface.Create<Service>();
         Service.pluginLog.Info("NRender Init");
+        Service.pluginLog.Info(Environment.CurrentDirectory);
         Service.Framework.Update += Framework_Update;
         VfxManager.Init();
         _inited = true;

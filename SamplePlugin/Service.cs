@@ -17,5 +17,6 @@ namespace NRender
         [PluginService] internal static IFramework Framework { get; private set; } = null!;
         [PluginService] internal static IPluginLog pluginLog { get; private set; } = null!;
         [PluginService] public static IGameInteropProvider Hook { get; private set; } = null!;
+        
     }
 }

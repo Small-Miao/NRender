@@ -27,28 +27,78 @@ namespace NRender.Vfx
 
     public class OmenElement
     {
+        /// <summary>
+        /// Oemn缩放
+        /// </summary>
         public Vector3 Scale { get; set; } = new Vector3(1f, 1f, 1f);
+        /// <summary>
+        /// Omen位置
+        /// </summary>
         public Vector3 Position { get; set; } = new Vector3(0, 0, 0);
+        /// <summary>
+        /// Omen初始颜色
+        /// </summary>
         public Vector4 Color { get; set; } = new Vector4(1f, 1f, 1f, 1f);
+        /// <summary>
+        /// Omen目标颜色
+        /// </summary>
         public Vector4 TargetColor { get; set; } = new Vector4(1f, 1f, 1f, 1f);
+        /// <summary>
+        /// Omen旋转面向
+        /// </summary>
         public float Facing { get; set; } = 0;
+        /// <summary>
+        /// OmenKey (CRC32)计算路径
+        /// </summary>
         public uint OmenKey { get; set; } = 0;
+        /// <summary>
+        /// Omen 状态 暂时无用
+        /// </summary>
         public AVFX_STATUS Status { get; set; } = AVFX_STATUS.AVFX_NONE;
+        /// <summary>
+        /// Omen 所属对象(绑定)
+        /// </summary>
         public GameObject? Owner { get; set; }
+        /// <summary>
+        /// Vfx句柄
+        /// </summary>
         internal nint? VfxHandle { get; set; }
+        /// <summary>
+        /// Omen 旋转角度
+        /// </summary>
         public float Rotation { get; set; } = 0;
+        /// <summary>
+        /// Omen销毁时间
+        /// </summary>
         public long DestoryAt { get; set; } = 3000;
+        /// <summary>
+        /// Omen偏移坐标
+        /// </summary>
         public Vector3 Offset { get; set; } = new Vector3(0, 0, 0);
+        /// <summary>
+        /// 初始化Omen
+        /// </summary>
+        /// <param name="path">OmenPath</param>
+        /// <param name="scale">缩放</param>
+        /// <param name="Owner">绑定GameObejct</param>
+        /// <param name="color">Omen颜色</param>
         public OmenElement(string path, System.Numerics.Vector3 scale, GameObject Owner, Vector4 color):
             this(path,scale,Owner.Position,color,Owner.Rotation){ 
             this.Owner = Owner;
         }
-        public long runningTime = 0;
-        public long startTime = 0;
+        
+        private long runningTime = 0;
+        private long startTime = 0;
+        private Vector4 CurrentColor { get; set; }
 
-        public Vector4 CurrentColor { get; set; }
-
-
+        /// <summary>
+        /// 初始化Omen 无绑定
+        /// </summary>
+        /// <param name="path">Omen路径</param>
+        /// <param name="scale">缩放</param>
+        /// <param name="position">坐标</param>
+        /// <param name="color">颜色</param>
+        /// <param name="facing">面向</param>
         public unsafe OmenElement(string path,Vector3 scale,Vector3 position,Vector4 color,float facing) {
             var crc32 = new Crc32();
             var bytes = Encoding.UTF8.GetBytes(path);
@@ -120,10 +170,10 @@ namespace NRender.Vfx
             long remainingTime = DestoryAt - runningTime;
 
             // 如果剩余时间小于 1000 毫秒，执行颜色插值
-            if (remainingTime < 200)
+            if (remainingTime < 100)
             {
                 // 计算插值比例
-                float interpolation = (float)remainingTime / 200f;
+                float interpolation = (float)remainingTime / 100f;
 
                 interpolation = 1 - interpolation;
                 // 初始颜色
@@ -143,7 +193,7 @@ namespace NRender.Vfx
             else
             {
                 // 计算插值比例
-                float interpolation = 1f - (float)remainingTime / (DestoryAt - 200f);
+                float interpolation = 1f - (float)remainingTime / (DestoryAt - 100f);
 
                 // 初始颜色
                 Vector4 initialColor = Color;
@@ -163,7 +213,9 @@ namespace NRender.Vfx
                 this.Dispose();
             }
         }
-
+        /// <summary>
+        /// 销毁Omen
+        /// </summary>
         public void Dispose()
         {
             Service.Framework.Update -= Framework_Update;

@@ -1,4 +1,5 @@
 using Dalamud.Hooking;
+using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using OpenTK.Mathematics;
 using System;
 using System.Collections.Generic;
@@ -11,8 +12,25 @@ namespace NRender.Vfx
 {
     public static class VfxManager
     {
+        /// <summary>
+        /// 绘制Omen存储列表
+        /// </summary>
         public static List<OmenElement> drawOmenElementList = new List<OmenElement>();
 
+        /// <summary>
+        /// Omen创建委托
+        /// </summary>
+        /// <param name="omenId"></param>
+        /// <param name="pos"></param>
+        /// <param name="chara"></param>
+        /// <param name="speed"></param>
+        /// <param name="facing"></param>
+        /// <param name="scaleX"></param>
+        /// <param name="scaleY"></param>
+        /// <param name="scaleZ"></param>
+        /// <param name="isEnemy"></param>
+        /// <param name="priority"></param>
+        /// <returns>VFX句柄</returns>
         public delegate nint CreateOmenDelegate(uint omenId, nint pos, long chara, float speed, float facing, float scaleX, float scaleY, float scaleZ, int isEnemy, int priority);
         public static CreateOmenDelegate? CreateOmen;
         public static Hook<CreateOmenDelegate> CreateOmenHook;
@@ -44,10 +62,19 @@ namespace NRender.Vfx
         public static SetOmenMatrixDelegate SetOmenMatrix;
         public static Hook<SetOmenMatrixDelegate> SetOmenMatrixHook;
 
+        public unsafe delegate ResourceHandle* GetResourceSyncDelegate(nint pFileManager, uint* pCategoryId, uint* pResourceType, uint* pResourceHash, Byte* pPath, nint pUnknown);
+        public static GetResourceSyncDelegate? GetResourceSync;
+        public static Hook<GetResourceSyncDelegate> GetResourceSyncHook;
+
+        public unsafe delegate nint VfxResoucesLoadDelegate(nint* pVfx, nint* pFile, uint fileSize, ResourceHandle* pHandle);
+        public static VfxResoucesLoadDelegate? VfxResoucesLoad;
+
+        public unsafe delegate nint VfxResSettupCompleteDelegate(ResourceHandle* pHandle);
+        public static VfxResSettupCompleteDelegate? VfxResSettupComplete;
+        public static nint ResouceManagerAddress = 0x0;
 
         public static void Init()
         {
-            Service.pluginLog.Info("Init");
             var createOmenFunctionAddress = Service.SigSCanner.ScanText(SigConst.CreateOmenSig);
             CreateOmen = Marshal.GetDelegateForFunctionPointer<CreateOmenDelegate>(createOmenFunctionAddress);
             CreateOmenHook = Service.Hook.HookFromAddress<CreateOmenDelegate>(createOmenFunctionAddress,createOmenFunctionHandle);
@@ -63,7 +90,7 @@ namespace NRender.Vfx
             StaticVfxHook = Service.Hook.HookFromAddress<StaticVfxCreateDelegate>(staticVfxCreateFunctionAddress,StaticVfxFunctionHandle);
             StaticVfxHook.Enable();
 
-            var initVfxParamFunctionAddress = Service.SigSCanner.ScanText(SigConst.InitVfxParam);
+            var initVfxParamFunctionAddress = Service.SigSCanner.ScanText(SigConst.InitVfxParamSig);
             InitVfxParam = Marshal.GetDelegateForFunctionPointer<InitVfxParamDelegate>(initVfxParamFunctionAddress);
 
             var setVfxP1FunctionAddress = Service.SigSCanner.ScanText(SigConst.SetVfxP1Sig);
@@ -83,8 +110,49 @@ namespace NRender.Vfx
             var setOmenMatrixFunctionAddress = Service.SigSCanner.ScanText(SigConst.SetOmenMatrixSig);
             SetOmenMatrix = Marshal.GetDelegateForFunctionPointer<SetOmenMatrixDelegate> (setOmenMatrixFunctionAddress);
             SetOmenMatrixHook = Service.Hook.HookFromAddress<SetOmenMatrixDelegate>(setOmenMatrixFunctionAddress, SetOmenMatrixHandle);
+
+            unsafe{
+                var getResourceSyncFunctionAddress = Service.SigSCanner.ScanText(SigConst.GetResourceSyncSig);
+                GetResourceSync = Marshal.GetDelegateForFunctionPointer<GetResourceSyncDelegate>(getResourceSyncFunctionAddress);
+                GetResourceSyncHook = Service.Hook.HookFromAddress<GetResourceSyncDelegate>(getResourceSyncFunctionAddress, GetResourceSyncHandle);
+
+                var vfxResoucesLoadSyncFucntionAddress = Service.SigSCanner.ScanText(SigConst.RescourseLoadSyncSig);
+                VfxResoucesLoad = Marshal.GetDelegateForFunctionPointer<VfxResoucesLoadDelegate>(vfxResoucesLoadSyncFucntionAddress);
+
+                var vfxResSettupCompleteFunctionAddress = Service.SigSCanner.ScanText(SigConst.VfxResSettupCompleteSig);
+                VfxResSettupComplete = Marshal.GetDelegateForFunctionPointer<VfxResSettupCompleteDelegate>(vfxResSettupCompleteFunctionAddress);
+            }
         }
 
+        private static unsafe ResourceHandle* GetResourceSyncHandle(nint pFileManager, uint* pCategoryId, uint* pResourceType, uint* pResourceHash, byte* pPath, nint pUnknown)
+        {
+            ResouceManagerAddress = pFileManager;
+            return GetResourceSyncHook.Original.Invoke(pFileManager, pCategoryId, pResourceType, pResourceHash, pPath, pUnknown);
+        }
+
+        public unsafe static void ResourceAdd(string path, byte[] data)
+        {
+            uint cateID = 0x08;
+            uint type = 1635149432; 
+            var crc32 = new System.IO.Hashing.Crc32();
+            var bytes = Encoding.UTF8.GetBytes(path);
+            crc32.Append(bytes);
+            IntPtr ptr = Marshal.StringToHGlobalAnsi(path);
+            uint omenID = BitConverter.ToUInt32(crc32.GetCurrentHash());
+            var result = GetResourceSync.Invoke(ResouceManagerAddress, &cateID, &type, &omenID, (byte*)ptr, IntPtr.Zero);
+            if (result != null)
+            {
+                Marshal.WriteByte((nint)result + 0xA8, 2);
+                Marshal.WriteByte((nint)result + 0xA9, 7);
+
+                var temp = IntPtr.Add((nint)result, 0xc0).ToPointer();
+                Byte[] fileData = data;
+                IntPtr fileptr = Marshal.AllocHGlobal(fileData.Length);
+                Marshal.Copy(fileData, 0, fileptr, fileData.Length);
+                var r = VfxManager.VfxResoucesLoad?.Invoke((nint*)Marshal.ReadIntPtr((nint)temp), (nint*)fileptr, Convert.ToUInt32(fileData.Length), result);
+                VfxManager.VfxResSettupComplete?.Invoke(result);
+            }
+        }
         private static nint SetOmenMatrixHandle(nint handle, nint pos)
         {
 
