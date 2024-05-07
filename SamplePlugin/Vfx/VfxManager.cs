@@ -16,6 +16,7 @@ namespace NRender.Vfx
         /// 绘制Omen存储列表
         /// </summary>
         public static List<OmenElement> drawOmenElementList = new List<OmenElement>();
+        public static List<ActorVfx> drawActorVfxList = new List<ActorVfx>();
 
         /// <summary>
         /// Omen创建委托
@@ -71,11 +72,20 @@ namespace NRender.Vfx
 
         public unsafe delegate nint VfxResSettupCompleteDelegate(ResourceHandle* pHandle);
         public static VfxResSettupCompleteDelegate? VfxResSettupComplete;
+
+        public delegate nint ActorVfxCreateDelegate(string path, nint a2, nint a3, float a4, char a5, ushort a6, char a7);
+        public static ActorVfxCreateDelegate? ActorVfxCreate;
+
+        public delegate nint ActorVfxRemoveDelegate(nint vfx, char a2);
+        public static ActorVfxRemoveDelegate? ActorVfxRemove;
+        public static Hook<ActorVfxRemoveDelegate> ActorVfxRemoveHook;
+
         public static nint ResouceManagerAddress = 0x0;
 
         public static void Init()
         {
             var createOmenFunctionAddress = Service.SigSCanner.ScanText(SigConst.CreateOmenSig);
+
             CreateOmen = Marshal.GetDelegateForFunctionPointer<CreateOmenDelegate>(createOmenFunctionAddress);
             CreateOmenHook = Service.Hook.HookFromAddress<CreateOmenDelegate>(createOmenFunctionAddress,createOmenFunctionHandle);
             CreateOmenHook.Enable();
@@ -111,10 +121,23 @@ namespace NRender.Vfx
             SetOmenMatrix = Marshal.GetDelegateForFunctionPointer<SetOmenMatrixDelegate> (setOmenMatrixFunctionAddress);
             SetOmenMatrixHook = Service.Hook.HookFromAddress<SetOmenMatrixDelegate>(setOmenMatrixFunctionAddress, SetOmenMatrixHandle);
 
-            unsafe{
+            var actorVfxCreateFunctionAddress = Service.SigSCanner.ScanText(SigConst.ActorVfxCreateSig);
+            ActorVfxCreate = Marshal.GetDelegateForFunctionPointer<ActorVfxCreateDelegate>(actorVfxCreateFunctionAddress);
+
+            var actorVfxRemoveFunctionAddress = Service.SigSCanner.ScanText(SigConst.ActorVfxRemoveSig) + 7;
+            ActorVfxRemove = Marshal.GetDelegateForFunctionPointer<ActorVfxRemoveDelegate>(Marshal.ReadIntPtr(actorVfxRemoveFunctionAddress + Marshal.ReadInt32(actorVfxRemoveFunctionAddress) + 4));
+            ActorVfxRemoveHook = Service.Hook.HookFromAddress<ActorVfxRemoveDelegate>(Marshal.ReadIntPtr(actorVfxRemoveFunctionAddress + Marshal.ReadInt32(actorVfxRemoveFunctionAddress) + 4), ActorVfxRemoveHandle);
+            ActorVfxRemoveHook.Enable();
+
+
+            unsafe
+            {
+                ResouceManagerAddress = (nint)Service.SigSCanner.ScanText("48 ?? ?? ?? ?? ?? ?? f0 0f c1 8a").ToPointer();
+
                 var getResourceSyncFunctionAddress = Service.SigSCanner.ScanText(SigConst.GetResourceSyncSig);
                 GetResourceSync = Marshal.GetDelegateForFunctionPointer<GetResourceSyncDelegate>(getResourceSyncFunctionAddress);
                 GetResourceSyncHook = Service.Hook.HookFromAddress<GetResourceSyncDelegate>(getResourceSyncFunctionAddress, GetResourceSyncHandle);
+                GetResourceSyncHook.Enable();
 
                 var vfxResoucesLoadSyncFucntionAddress = Service.SigSCanner.ScanText(SigConst.RescourseLoadSyncSig);
                 VfxResoucesLoad = Marshal.GetDelegateForFunctionPointer<VfxResoucesLoadDelegate>(vfxResoucesLoadSyncFucntionAddress);
@@ -122,11 +145,37 @@ namespace NRender.Vfx
                 var vfxResSettupCompleteFunctionAddress = Service.SigSCanner.ScanText(SigConst.VfxResSettupCompleteSig);
                 VfxResSettupComplete = Marshal.GetDelegateForFunctionPointer<VfxResSettupCompleteDelegate>(vfxResSettupCompleteFunctionAddress);
             }
+
+            Service.pluginLog.Info($"createOmenFunctionAddress:{createOmenFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"createVfxFunctionAddress:{createVfxFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"staticVfxCreateFunctionAddress:{staticVfxCreateFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"initVfxParamFunctionAddress:{initVfxParamFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"setVfxP1FunctionAddress:{setVfxP1FunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"setVfxP2FunctionAddress:{setVfxP2FunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"setOmenColorFunctionAddress:{setOmenColorFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"removeOmenFunctionAddress:{removeOmenFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"setOmenMatrixFunctionAddress:{setOmenMatrixFunctionAddress.ToString("X")}");
+            Service.pluginLog.Info($"getResourceSyncFunctionAddress:{GetResourceSyncHook.Address.ToString("X")}");
+
+        }
+
+        private static nint ActorVfxRemoveHandle(nint vfx, char a2)
+        {
+            lock (VfxManager.drawActorVfxList)
+            {
+                var vfxElement = VfxManager.drawActorVfxList.Find((x) => x._handle == vfx);
+                if (vfxElement != null)
+                {
+                    vfxElement.isDispose = true;
+                    VfxManager.drawActorVfxList.Remove(vfxElement);
+                }
+
+            }
+            return ActorVfxRemoveHook.Original.Invoke(vfx, a2);
         }
 
         private static unsafe ResourceHandle* GetResourceSyncHandle(nint pFileManager, uint* pCategoryId, uint* pResourceType, uint* pResourceHash, byte* pPath, nint pUnknown)
         {
-            ResouceManagerAddress = pFileManager;
             return GetResourceSyncHook.Original.Invoke(pFileManager, pCategoryId, pResourceType, pResourceHash, pPath, pUnknown);
         }
 
@@ -139,6 +188,10 @@ namespace NRender.Vfx
             crc32.Append(bytes);
             IntPtr ptr = Marshal.StringToHGlobalAnsi(path);
             uint omenID = BitConverter.ToUInt32(crc32.GetCurrentHash());
+            if (ResouceManagerAddress == 0x0)
+            {
+                return;
+            }
             var result = GetResourceSync.Invoke(ResouceManagerAddress, &cateID, &type, &omenID, (byte*)ptr, IntPtr.Zero);
             if (result != null)
             {
@@ -157,7 +210,6 @@ namespace NRender.Vfx
         {
 
             var a = Marshal.PtrToStructure<Matrix4>(pos);
-            Service.pluginLog.Info(a.ToString());
             return SetOmenMatrixHook.Original.Invoke(handle, pos);
         }
 
@@ -177,14 +229,12 @@ namespace NRender.Vfx
         private static nint createVfxFunctionHandle(nint resPath, nint param, int attr, int priority, float posX, float posY, float posZ, float scaleX, float scaleY, float scaleZ, float facing, float speed, int offscreen)
         {
             var a = CreateVfxHook.Original.Invoke(resPath, param, attr, priority, posX, posY, posZ, scaleX, scaleY, scaleZ, facing, speed, offscreen);
-            Service.pluginLog.Info($"VfxHandle:{a} ResPath:{Marshal.PtrToStringAnsi(resPath)} param:{param} attr:{attr} Pos:[{posX} {posY} {posZ}] Scale:[{scaleX} {scaleY} {scaleZ}] facing:{facing} speed:{speed}");
             return a;
         }
 
         private static nint createOmenFunctionHandle(uint omenId, nint pos, long chara, float speed, float facing, float scaleX, float scaleY, float scaleZ, int isEnemy, int priority)
         {
             var a = CreateOmenHook.Original.Invoke(omenId, pos, chara, speed, facing, scaleX, scaleY, scaleZ, isEnemy, priority);
-            Service.pluginLog.Info($"OmenHandle:{a}");
             return a;
         }
 

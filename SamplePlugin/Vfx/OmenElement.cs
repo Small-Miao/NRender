@@ -120,7 +120,10 @@ namespace NRender.Vfx
             }
 
             VfxManager.SetOmenColor?.Invoke((nint)this.VfxHandle, Color.X,Color.Y,Color.Z,Color.W);
-            VfxManager.drawOmenElementList.Add(this);
+            lock (VfxManager.drawOmenElementList)
+            {
+                VfxManager.drawOmenElementList.Add(this);
+            }
             startTime = Environment.TickCount64;
             Service.Framework.Update += Framework_Update;
         }
@@ -181,9 +184,6 @@ namespace NRender.Vfx
 
                 // 目标颜色，将 alpha 通道设置为 0
                 Vector4 targetColor = new Vector4(initialColor.X, initialColor.Y, initialColor.Z, 0);
-
-                Service.pluginLog.Info(interpolation.ToString());
-                // 插值颜色
                 Vector4 interpolatedColor = Vector4.Lerp(initialColor, targetColor, interpolation);
 
                 // 更新颜色
@@ -200,11 +200,10 @@ namespace NRender.Vfx
 
                 // 目标颜色
                 Vector4 targetColor = TargetColor;
-                Service.pluginLog.Info(interpolation.ToString());
                 // 插值颜色
                 Vector4 interpolatedColor = Vector4.Lerp(initialColor, targetColor, interpolation);
                 CurrentColor = interpolatedColor;
-                // 更新颜色
+                // 更新颜色 
                 VfxManager.SetOmenColor?.Invoke((nint)this.VfxHandle, interpolatedColor.X, interpolatedColor.Y, interpolatedColor.Z, interpolatedColor.W);
             }
 
@@ -220,7 +219,10 @@ namespace NRender.Vfx
         {
             Service.Framework.Update -= Framework_Update;
             VfxManager.RemoveOmenHook.Original.Invoke((nint)this.VfxHandle, 1);
-            VfxManager.drawOmenElementList.Remove(this);
+            lock (VfxManager.drawOmenElementList)
+            {
+                VfxManager.drawOmenElementList.Remove(this);
+            }
         }
     }
 }

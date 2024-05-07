@@ -47,6 +47,12 @@ namespace NRender.Vfx
             VfxManager.ResourceAdd(path, newDount);
         }
 
+        public static void RegisterCircleVfx(string path)
+        {
+            byte[] newCircle = Properties.Resources.tmp_circle;
+            VfxManager.ResourceAdd(path, newCircle);
+        }
+
         private static byte[] MakeDonut(byte[] temp, float ignore_percent, float? fan_rad = null)
         {
             float ring_fan_value = fan_rad is not null ? (float)((1 - Math.Cos(fan_rad.Value / 2)) / 2) : 1;
