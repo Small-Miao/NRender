@@ -13,7 +13,7 @@ public static class NRenderMain
 {
     internal static string _name = "NRender";
     private static bool _inited = false;
-    public static void Init(DalamudPluginInterface pluginInterface,string name)
+    public static string Init(DalamudPluginInterface pluginInterface,string name)
     {
         pluginInterface.Create<Service>();
         Service.pluginLog.Info("NRender Init");
@@ -21,6 +21,7 @@ public static class NRenderMain
         Service.Framework.Update += Framework_Update;
         VfxManager.Init();
         _inited = true;
+        return Service.PluginInterface.AssemblyLocation.FullName;
     }
 
     public static void Dispose()
